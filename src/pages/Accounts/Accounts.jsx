@@ -48,7 +48,14 @@ export default function Accounts() {
     setSyncResult(null)
     setSyncError('')
     try {
-      const result = await api.plaidSync()
+      // The server time-boxes each call; keep going until it reports nothing left (cap for safety)
+      let result = await api.plaidSync()
+      let total = result.synced ?? 0
+      for (let i = 0; result.more && i < 40; i++) {
+        result = await api.plaidSync()
+        total += result.synced ?? 0
+      }
+      result = { ...result, synced: total }
       setSyncResult(result)
       refresh()
       refreshItems()
