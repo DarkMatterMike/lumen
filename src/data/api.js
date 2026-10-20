@@ -55,7 +55,9 @@ export const api = {
   updateAccount: (id, body) => USE_MOCK ? mock(() => mockUpdateAccount(id, body)) : request(`/api/accounts/${id}`, { method: 'PATCH', body }),
 
   // ── plaid ──
-  plaidLinkToken: ()     => USE_MOCK ? mock(() => ({ link_token: null }))  : request('/api/plaid/link-token', { method: 'POST' }),
+  plaidLinkToken: (itemId) => USE_MOCK ? mock(() => ({ link_token: null }))  : request('/api/plaid/link-token', { method: 'POST', body: itemId ? { item_id: itemId } : undefined }),
+  plaidItems:     ()     => USE_MOCK ? mock(() => ({ items: [] }))         : request('/api/plaid/items'),
+  plaidReconnected: (itemId) => USE_MOCK ? mock(() => ({ success: true })) : request('/api/plaid/reconnected', { method: 'POST', body: { item_id: itemId } }),
   plaidExchange:  (body) => USE_MOCK ? mock(() => ({ success: true }))     : request('/api/plaid/exchange',    { method: 'POST', body }),
   plaidSync:      ()     => USE_MOCK ? mock(() => ({ success: true }))     : request('/api/plaid/sync',        { method: 'POST' }),
 

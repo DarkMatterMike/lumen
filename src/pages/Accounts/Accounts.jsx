@@ -10,7 +10,10 @@ const ROLES = ['source', 'protected', 'ignore']
 
 export default function Accounts() {
   const { data, loading, error, refresh } = useApi(() => api.accounts(), [])
+  const { data: itemsData, refresh: refreshItems } = useApi(() => api.plaidItems(), [])
   const [editing, setEditing]   = useState(null)
+  const [reconnectId, setReconnectId] = useState(null)   // plaid_items.id being re-authenticated
+  const brokenItems = (itemsData?.items || []).filter(i => i.status && i.status !== 'ok')
 
   // ── Plaid Link state ────────────────────────────────────────
   const [linkToken,    setLinkToken]    = useState(null)
@@ -48,6 +51,7 @@ export default function Accounts() {
       const result = await api.plaidSync()
       setSyncResult(result)
       refresh()
+      refreshItems()
       setTimeout(() => setSyncResult(null), 4000)
     } catch (e) {
       setSyncError(e?.message || 'Sync failed.')
@@ -57,12 +61,13 @@ export default function Accounts() {
   }
 
   // ── Step 1: fetch a link token from the backend ─────────────
-  async function openPlaid() {
+  async function openPlaid(itemId = null) {
     setLinkError('')
     setSyncDone(false)
     setLinkLoading(true)
+    setReconnectId(itemId)
     try {
-      const { link_token } = await api.plaidLinkToken()
+      const { link_token } = await api.plaidLinkToken(itemId)
       setLinkToken(link_token)
       // usePlaidLink will auto-open once linkToken is set (see useEffect inside the hook)
     } catch (e) {
@@ -77,20 +82,27 @@ export default function Accounts() {
     setConnecting(true)
     setLinkError('')
     try {
-      await api.plaidExchange({
-        public_token,
-        institution_id:   metadata?.institution?.institution_id,
-        institution_name: metadata?.institution?.name,
-      })
+      if (reconnectId) {
+        // Update mode: same item, no token exchange needed
+        await api.plaidReconnected(reconnectId)
+        setReconnectId(null)
+      } else {
+        await api.plaidExchange({
+          public_token,
+          institution_id:   metadata?.institution?.institution_id,
+          institution_name: metadata?.institution?.name,
+        })
+      }
       setSyncDone(true)
       setLinkToken(null)
       refresh()
+      refreshItems()
     } catch (e) {
       setLinkError(e?.message || 'Could not connect account.')
     } finally {
       setConnecting(false)
     }
-  }, [refresh])
+  }, [refresh, refreshItems, reconnectId])
 
   const onPlaidExit = useCallback(() => {
     setLinkToken(null)
@@ -151,7 +163,7 @@ export default function Accounts() {
 
         <button
           className={`${s.toolChip} ${s.toolChipAlt} ${syncDone ? s.toolChipDone : ''}`}
-          onClick={openPlaid}
+          onClick={() => openPlaid()}
           disabled={isWorking || syncing}
           title="Connect a new bank account via Plaid">
           {connecting    ? '⟳ Connecting…'
@@ -164,6 +176,15 @@ export default function Accounts() {
           <span className={s.chipErr}>{linkError || syncError}</span>
         )}
       </div>
+
+      {brokenItems.map(i => (
+        <div key={i.id} className={s.chipErr} style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '0 0 12px' }}>
+          <span>{i.institution_name || 'A bank'} needs you to log in again before it can sync.</span>
+          <button className={s.toolChip} onClick={() => openPlaid(i.id)} disabled={isWorking || syncing}>
+            Reconnect
+          </button>
+        </div>
+      ))}
 
       {loading && !data && <div className={s.state}>Loading accounts…</div>}
       {error && <div className={s.state}>Couldn't load accounts. <b>{error}</b></div>}
